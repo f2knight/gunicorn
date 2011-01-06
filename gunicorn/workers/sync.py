@@ -65,46 +65,48 @@ class SyncWorker(base.Worker):
     
     def handle(self, client, addr):
         try:
-            parser = http.RequestParser(client)
-            req = parser.next()
-            self.handle_request(req, client, addr)
-        except StopIteration:
-            self.log.debug("Ignored premature client disconnection.")
-        except socket.error, e:
-            if e[0] != errno.EPIPE:
-                self.log.exception("Error processing request.")
-            else:
-                self.log.debug("Ignoring EPIPE")
-        except Exception, e:
-            self.handle_error(client, e)
+            try:
+                parser = http.RequestParser(client)
+                req = parser.next()
+                self.handle_request(req, client, addr)
+            except StopIteration:
+                self.log.debug("Ignored premature client disconnection.")
+            except socket.error, e:
+                if e[0] != errno.EPIPE:
+                    self.log.exception("Error processing request.")
+                else:
+                    self.log.debug("Ignoring EPIPE")
+            except Exception, e:
+                self.handle_error(client, e)
         finally:    
             util.close(client)
 
     def handle_request(self, req, client, addr):
         try:
-            self.cfg.pre_request(self, req)
-            resp, environ = wsgi.create(req, client, addr,
-                    self.address, self.cfg)
-            # Force the connection closed until someone shows
-            # a buffering proxy that supports Keep-Alive to
-            # the backend.
-            resp.force_close()
-            self.nr += 1
-            if self.nr >= self.max_requests:
-                self.log.info("Autorestarting worker after current request.")
-                self.alive = False
-            respiter = self.wsgi(environ, resp.start_response)
-            for item in respiter:
-                resp.write(item)
-            resp.close()
-            if hasattr(respiter, "close"):
-                respiter.close()
-        except socket.error:
-            raise
-        except Exception, e:
-            # Only send back traceback in HTTP in debug mode.
-            self.handle_error(client, e) 
-            return
+            try:
+                self.cfg.pre_request(self, req)
+                resp, environ = wsgi.create(req, client, addr,
+                        self.address, self.cfg)
+                # Force the connection closed until someone shows
+                # a buffering proxy that supports Keep-Alive to
+                # the backend.
+                resp.force_close()
+                self.nr += 1
+                if self.nr >= self.max_requests:
+                    self.log.info("Autorestarting worker after current request.")
+                    self.alive = False
+                respiter = self.wsgi(environ, resp.start_response)
+                for item in respiter:
+                    resp.write(item)
+                resp.close()
+                if hasattr(respiter, "close"):
+                    respiter.close()
+            except socket.error:
+                raise
+            except Exception, e:
+                # Only send back traceback in HTTP in debug mode.
+                self.handle_error(client, e) 
+                return
         finally:
             try:
                 self.cfg.post_request(self, req)

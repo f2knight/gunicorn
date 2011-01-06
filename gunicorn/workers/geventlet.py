@@ -3,8 +3,6 @@
 # This file is part of gunicorn released under the MIT license. 
 # See the NOTICE for more information.
 
-from __future__ import with_statement
-
 
 import os
 try:
@@ -47,5 +45,9 @@ class EventletWorker(AsyncWorker):
             eventlet.sleep(1.0)
 
         self.notify()
-        with eventlet.Timeout(self.timeout, False):
+        timeout = eventlet.Timeout(self.timeout, False)
+        try:
             eventlet.kill(self.acceptor, eventlet.StopServe)
+        finally:
+            timeout.cancel()
+
